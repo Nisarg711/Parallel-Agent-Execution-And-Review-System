@@ -43,7 +43,7 @@ def run_task(task_id: str, description: str, mode: str):
         with Session(engine) as session:
             task = session.get(Task, task_id)
             task.branch_name = branch
-            task.worktree_path = worktree_path
+            task.worktree_path = str(worktree_path)   # <-- convert Path to str
             task.updated_at = datetime.utcnow()
             session.add(task)
             session.commit()

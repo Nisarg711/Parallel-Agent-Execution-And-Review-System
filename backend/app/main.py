@@ -11,14 +11,24 @@ from app.db.session import engine, init_db
 from app.db.models import Task
 from app.task_runner import run_task
 
+
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="Multi-Agent Task Isolation and Review System")
-
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 @app.on_event("startup")
 def on_startup():
     init_db()
 
 
+'''
+Task is a SQLModel, FastAPI can use it directly as both the DB model and the API response schema
+'''
 @app.post("/tasks", response_model=Task)
 def create_task(description: str, mode: str, background_tasks: BackgroundTasks):
     if mode not in ("edit", "suggest"):
@@ -50,6 +60,7 @@ def get_task(task_id: str):
         return task
 
 
+'''This is a guardrail to ensure that we don't accidently approve a task still running'''
 @app.post("/tasks/{task_id}/approve", response_model=Task)
 def approve_task(task_id: str):
     with Session(engine) as session:
