@@ -14,3 +14,5 @@ def init_db():
 def get_session():
     with Session(engine) as session:
         yield session
+
+#In SQLModel, the engine is the central object that manages the connection to your SQL database.

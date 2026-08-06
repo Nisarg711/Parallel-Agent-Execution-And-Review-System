@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
+REDIS_URL = os.environ.get("REDIS_URL")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
@@ -18,3 +19,4 @@ BASE_REPO_PATH = Path(
     or PROJECT_ROOT / "workspaces" / "base" / "Password_Manager"
 )
 WORKTREES_DIR = PROJECT_ROOT / "workspaces" / "worktrees"
+#WORKTREES_DIR is where per-task copies get created.
