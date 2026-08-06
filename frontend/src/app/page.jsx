@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, createTask } from "@/lib/api";
+import { BranchIcon } from "@/components/BrandMark";
 
 const STATUS = {
   pending: { label: "Queued", hex: "#545B68", pill: "bg-[#545B68]/15 text-[#9AA1AC] border-[#545B68]/30" },
@@ -18,28 +19,76 @@ function statusInfo(status) {
   return STATUS[status] || STATUS.pending;
 }
 
-// Git-branch glyph: two nodes on the trunk plus one branch node peeling off,
-// used as the product mark since "isolated branch per task" is the whole idea.
-function BranchIcon({ className }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
-      <circle cx="4" cy="3" r="1.6" fill="currentColor" />
-      <circle cx="4" cy="13" r="1.6" fill="currentColor" />
-      <circle cx="12" cy="9" r="1.6" fill="currentColor" />
-      <path d="M4 4.6V11.4" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M4 7C4 8.4 5 9 6.5 9H10.4" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  );
+// Phases mirror the agent's real ReAct loop (see backend/app/agent.py's
+// system prompts): explore the repo, decide, act, then optionally verify.
+// We don't have telemetry on which exact step it's on, so this cycles
+// through them as a plausible "what it's probably doing" — not a claim
+// about the literal current step.
+const RUNNING_PHASES = {
+  edit: [
+    "Setting up an isolated worktree…",
+    "Reading through the code…",
+    "Figuring out an approach…",
+    "Writing the change…",
+    "Double-checking the result…",
+  ],
+  suggest: [
+    "Setting up an isolated worktree…",
+    "Reading through the code…",
+    "Figuring out an approach…",
+    "Drafting a proposal…",
+    "Double-checking the result…",
+  ],
+};
+
+function useCyclingPhase(active, phases, intervalMs = 2600) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setIndex((i) => (i + 1) % phases.length), intervalMs);
+    return () => clearInterval(id);
+  }, [active, phases, intervalMs]);
+  return active ? phases[index] : null;
+}
+
+// True for ~1.2s right after `value` changes — used to briefly highlight a
+// card the moment its status actually flips, so a change between polls is
+// easy to notice instead of silently swapping a label.
+function useFlashOnChange(value) {
+  const [flash, setFlash] = useState(false);
+  const prevRef = useRef(value);
+  useEffect(() => {
+    if (prevRef.current !== value) {
+      prevRef.current = value;
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [value]);
+  return flash;
 }
 
 // The connector each task row draws from the shared trunk line into its own
 // card — a small branch-out curve, colored by status, ending in a node.
 // This is the same visual grammar as `git log --graph`: one trunk, many
 // short-lived branches peeling off and (if approved) merging back in.
-function BranchConnector({ hex, merged }) {
+function BranchConnector({ hex, merged, pulsing }) {
   return (
     <svg width="32" height="32" viewBox="0 0 32 32" className="mt-3 shrink-0" aria-hidden>
       <path d="M6 0 Q6 16 22 16" stroke="#2A303C" strokeWidth="1.5" fill="none" />
+      {pulsing && (
+        // Flowing dashes racing along the curve toward the node — reads as
+        // "work is actively moving from main into this branch right now."
+        <path
+          d="M6 0 Q6 16 22 16"
+          stroke={hex}
+          strokeWidth="1.5"
+          fill="none"
+          strokeDasharray="4 5"
+          className="animate-[dash-flow_0.8s_linear_infinite]"
+        />
+      )}
+      {pulsing && <circle cx="22" cy="16" r="4" fill={hex} className="origin-center animate-ping" />}
       <circle cx="22" cy="16" r="4" fill={hex} />
       {merged && (
         <path d="M22 16 Q6 16 6 32" stroke={hex} strokeWidth="1.5" fill="none" strokeDasharray="3 2" />
@@ -48,8 +97,101 @@ function BranchConnector({ hex, merged }) {
   );
 }
 
+// One worker's lane. Reads real RQ/Redis state via /queue/status — not the
+// tasks table — so this is a direct view into the queue mechanics: which
+// process is idle, which one is actually crunching which job right now.
+// Three dots bouncing in sequence — the universal "actively working" tell,
+// next to whatever a busy worker is doing.
+function BouncingDots() {
+  return (
+    <span className="ml-1 inline-flex items-end gap-0.5 align-middle">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="h-1 w-1 animate-bounce rounded-full bg-[#3FA9C9]"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function WorkerLane({ worker }) {
+  const busy = worker.state === "busy" && worker.current_description;
+  return (
+    <div
+      className={`relative overflow-hidden rounded-lg border border-[#232935] bg-[#12161F] p-3 transition-all duration-700 ${
+        busy ? "animate-[running-pulse_2s_ease-in-out_infinite] border-[#3FA9C9]/40" : ""
+      }`}
+    >
+      {busy && (
+        // A light sweep drifting across the card — continuous horizontal
+        // movement so a busy worker reads as active at a glance, not just
+        // differently colored.
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 animate-[shimmer-sweep_2.2s_linear_infinite]"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(63,169,201,0.12), transparent)" }}
+        />
+      )}
+      <div className="relative flex items-center justify-between gap-2">
+        <span className="truncate font-mono text-xs text-[#7C8494]">{worker.name.slice(0, 12)}</span>
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          {busy && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3FA9C9] opacity-75" />
+          )}
+          <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${busy ? "bg-[#3FA9C9]" : "bg-[#3A414D]"}`} />
+        </span>
+      </div>
+      <p className={`relative mt-1.5 line-clamp-2 text-xs leading-snug ${busy ? "text-[#E6E8EB]" : "text-[#4B5563]"}`}>
+        {busy ? worker.current_description : "idle"}
+        {busy && <BouncingDots />}
+      </p>
+    </div>
+  );
+}
+
+// One branch row. Pulled out of the list's .map() into its own component
+// because useCyclingPhase/useFlashOnChange are hooks — they must run inside
+// a real component instance per task, not inside a bare .map() callback.
+function TaskRow({ task }) {
+  const s = statusInfo(task.status);
+  const isRunning = task.status === "running";
+  const justChanged = useFlashOnChange(task.status);
+  const phase = useCyclingPhase(isRunning, RUNNING_PHASES[task.mode] || RUNNING_PHASES.edit);
+
+  return (
+    <Link href={`/tasks/${task.id}`} className="group flex items-start gap-4">
+      <BranchConnector hex={s.hex} merged={task.status === "approved"} pulsing={isRunning} />
+      <div
+        className={`flex-1 rounded-lg border border-[#232935] bg-[#12161F] p-4 transition-all duration-700 group-hover:-translate-y-0.5 group-hover:border-[#3A4150] group-hover:shadow-[0_8px_20px_rgba(0,0,0,0.3)] ${
+          isRunning ? "animate-[running-pulse_2s_ease-in-out_infinite]" : ""
+        } ${justChanged ? "border-[#E8A33D]/60 bg-[#1A1610]" : ""}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm leading-snug text-[#E6E8EB]">{task.description}</p>
+          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-xs ${s.pill}`}>
+            {s.label}
+          </span>
+        </div>
+        <p className="mt-2 font-mono text-xs text-[#7C8494]">
+          {task.mode === "edit" ? "edit mode" : "suggest mode"} · agent/{task.id.slice(0, 8)}
+          {isRunning && phase && (
+            <span key={phase} className="animate-[text-fade-in_0.4s_ease-out] text-[#3FA9C9]">
+              {" "}
+              · {phase}
+            </span>
+          )}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
 export default function HomePage() {
   const { data: tasks, error, isLoading } = useSWR("/tasks", fetcher, {
+    refreshInterval: 2000,
+  });
+  const { data: queueStatus } = useSWR("/queue/status", fetcher, {
     refreshInterval: 2000,
   });
 
@@ -169,6 +311,29 @@ export default function HomePage() {
           )}
         </form>
 
+        {/* Workers: live RQ/Redis state, not derived from the tasks table */}
+        {queueStatus && (
+          <div id="workers" className="mb-10 scroll-mt-8">
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 className="font-mono text-xs uppercase tracking-widest text-[#7C8494]">Workers</h2>
+              <span className="font-mono text-xs text-[#4B5563]">{queueStatus.queued_count} queued</span>
+            </div>
+            {queueStatus.workers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#232935] py-6 text-center">
+                <p className="text-sm text-[#7C8494]">
+                  No workers connected — start one with <code className="text-[#9AA1AC]">rq worker tasks</code>.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {queueStatus.workers.map((w) => (
+                  <WorkerLane key={w.name} worker={w} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Branch list */}
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="font-mono text-xs uppercase tracking-widest text-[#7C8494]">
@@ -209,25 +374,9 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-3">
-              {tasks.map((task) => {
-                const s = statusInfo(task.status);
-                return (
-                  <Link key={task.id} href={`/tasks/${task.id}`} className="group flex items-start gap-4">
-                    <BranchConnector hex={s.hex} merged={task.status === "approved"} />
-                    <div className="flex-1 rounded-lg border border-[#232935] bg-[#12161F] p-4 transition group-hover:-translate-y-0.5 group-hover:border-[#3A4150] group-hover:shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm leading-snug text-[#E6E8EB]">{task.description}</p>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-xs ${s.pill}`}>
-                          {s.label}
-                        </span>
-                      </div>
-                      <p className="mt-2 font-mono text-xs text-[#7C8494]">
-                        {task.mode === "edit" ? "edit mode" : "suggest mode"} · agent/{task.id.slice(0, 8)}
-                      </p>
-                    </div>
-                  </Link>
-                );
-              })}
+              {tasks.map((task) => (
+                <TaskRow key={task.id} task={task} />
+              ))}
             </div>
           </div>
         )}

@@ -11,7 +11,8 @@ wait for time-consuming operations to finish.
 """
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from sqlmodel import Session, select
-from app.queue import task_queue
+from rq import Worker
+from app.queue import task_queue, redis_conn
 from app.db.session import engine, init_db
 from app.db.models import Task
 from app.task_runner import run_task
@@ -54,6 +55,23 @@ def create_task(description: str, mode: str):
 def list_tasks():
     with Session(engine) as session:
         return session.exec(select(Task).order_by(Task.created_at.desc())).all()
+
+
+'''Reads live state straight from RQ/Redis — not the tasks table — so this
+reflects the actual queue/worker mechanics (who's idle, who's crunching what),
+not just what each task row says about itself.'''
+@app.get("/queue/status")
+def queue_status():
+    workers = []
+    for w in Worker.all(connection=redis_conn):
+        job = w.get_current_job()
+        workers.append({
+            "name": w.name,
+            "state": w.get_state(),
+            "current_task_id": job.args[0] if job else None,
+            "current_description": job.args[1] if job else None,
+        })
+    return {"queued_count": task_queue.count, "workers": workers}
 
 
 @app.get("/tasks/{task_id}", response_model=Task)

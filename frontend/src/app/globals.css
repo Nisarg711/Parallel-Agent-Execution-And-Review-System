@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Breathing border for a task card while its agent is actively running —
+used via `animate-[running-pulse_2s_ease-in-out_infinite]` so a "running"
+card visibly differs from a static one, not just by label color. */
+@keyframes running-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(63, 169, 201, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(63, 169, 201, 0); }
+}
+
+/* Dashes racing along a running task's branch connector, toward the node —
+current visibly flowing from `main` into the active branch. */
+@keyframes dash-flow {
+  to { stroke-dashoffset: -18; }
+}
+
+/* Each new cycling status phrase (see RUNNING_PHASES in page.jsx) fades/
+slides in rather than popping, so the swap reads as an update, not a glitch. */
+@keyframes text-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* A light sweep drifting across a busy worker's card (see WorkerLane). */
+@keyframes shimmer-sweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(220%); }
+}
