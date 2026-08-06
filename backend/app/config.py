@@ -11,8 +11,13 @@ REDIS_URL = os.environ.get("REDIS_URL")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
+# Used to commit/push an approved task's branch and open a PR (see
+# app/github_integration.py). Only needed for edit-mode approvals.
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_REPO = os.environ.get("GITHUB_REPO")  # "owner/repo" form
+
 # Where the target repo (Password Manager) is cloned once, and worktrees
-# for individual tasks get created underneath. Shared with any other
+# for individual tasks get created underneath. Shared with any otxher
 # backend/frontend, so it lives at the project root, not inside backend/.
 BASE_REPO_PATH = Path(
     os.environ.get("TARGET_REPO_PATH")

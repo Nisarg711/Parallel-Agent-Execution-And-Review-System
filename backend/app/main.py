@@ -16,6 +16,7 @@ from app.queue import task_queue, redis_conn
 from app.db.session import engine, init_db
 from app.db.models import Task
 from app.task_runner import run_task
+from app.github_integration import commit_and_push, create_pull_request
 
 
 from fastapi.middleware.cors import CORSMiddleware

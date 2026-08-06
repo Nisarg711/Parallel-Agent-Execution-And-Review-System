@@ -25,3 +25,4 @@ class Task(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     summary: Optional[str] = None
+    pr_url: Optional[str] = None  # set once an edit-mode approval opens a PR
