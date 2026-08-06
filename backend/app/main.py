@@ -84,7 +84,14 @@ def get_task(task_id: str):
         return task
 
 
-'''This is a guardrail to ensure that we don't accidently approve a task still running'''
+'''This is a guardrail to ensure that we don't accidently approve a task still running.
+
+For edit-mode tasks, approving is what actually lands the change: commit the
+worktree, push the branch, open a PR. Suggest-mode tasks never wrote
+anything to disk, so there's nothing to push — approving one just records
+the decision. If the git/GitHub steps fail, the task stays "needs_review"
+(not "approved") so it can be retried, rather than silently approving
+something that never actually made it to GitHub.'''
 @app.post("/tasks/{task_id}/approve", response_model=Task)
 def approve_task(task_id: str):
     with Session(engine) as session:
@@ -93,6 +100,26 @@ def approve_task(task_id: str):
             raise HTTPException(status_code=404, detail="Task not found")
         if task.status != "needs_review":
             raise HTTPException(status_code=400, detail=f"Task is '{task.status}', not ready for approval")
+
+        if task.mode == "edit" and task.worktree_path and task.branch_name:
+            try:
+                pushed = commit_and_push(
+                    task.worktree_path,
+                    task.branch_name,
+                    commit_message=f"Agent: {task.description[:72]}",
+                )
+                if pushed:
+                    task.pr_url = create_pull_request(
+                        task.branch_name,
+                        title=task.description[:72],
+                        body=task.summary or "Agent-generated change.",
+                    )
+            except Exception as err:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Approved locally but failed to push/open PR: {err}",
+                )
+
         task.status = "approved"
         session.add(task)
         session.commit()
