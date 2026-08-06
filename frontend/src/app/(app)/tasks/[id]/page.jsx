@@ -119,6 +119,17 @@ export default function TaskDetailPage() {
           </span>
         </div>
 
+        {task.pr_url && (
+          <a
+            href={task.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-[#4FB477]/40 bg-[#4FB477]/10 px-3 py-1.5 text-sm text-[#4FB477] transition hover:bg-[#4FB477]/20"
+          >
+            View PR on GitHub <span aria-hidden>↗</span>
+          </a>
+        )}
+
         {task.summary && (
           <div className="mt-6 rounded-lg border border-[#232935] bg-[#12161F] p-4">
             <h2 className="mb-2 font-mono text-xs uppercase tracking-widest text-[#7C8494]">

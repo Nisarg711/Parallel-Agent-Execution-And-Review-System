@@ -5,8 +5,8 @@ tasks never call any of this: nothing was ever written to disk for them.
 
 Auth note: the token is passed as a short-lived `http.extraHeader` scoped to
 a single git invocation, not embedded in the remote URL — so it never ends
-up in `git remote -v`, error messages, or anything we might log to the
-task's error_log.
+up in `git remote -v`. Error messages use a fixed `label`, never the raw
+`args` (which carry the auth header) or unscrubbed subprocess output.
 """
 import base64
 import subprocess
@@ -17,41 +17,69 @@ BOT_NAME = "Agent Bot"
 BOT_EMAIL = "agent-bot@users.noreply.github.com"
 
 
-def _run_git(args, cwd):
+def _repo_slug() -> str:
+    """Normalizes GITHUB_REPO to "owner/repo" regardless of whether it was
+    set as that, a full URL, or either with a trailing slash/`.git`."""
+    slug = (GITHUB_REPO or "").strip()
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if slug.startswith(prefix):
+            slug = slug[len(prefix):]
+    return slug.removesuffix(".git").strip("/")
+
+
+def _run_git(args, cwd, label, secret=None):
+    """`label` (not `args`) is what goes into any error message — `args` may
+    contain the auth header and must never be echoed back, logged, or
+    returned in an API response. `secret`, if given, is also scrubbed out of
+    git's own stderr as a second layer of defense."""
     result = subprocess.run(
         ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args[:2])} failed: {result.stderr.strip()}")
+        stderr = result.stderr.strip()
+        if secret:
+            stderr = stderr.replace(secret, "[REDACTED]")
+        raise RuntimeError(f"git {label} failed: {stderr}")
     return result.stdout
 
 
 def commit_and_push(worktree_path: str, branch_name: str, commit_message: str) -> bool:
-    """Returns False if there was nothing to commit (e.g. the agent made no
-    changes), True if a commit was made and pushed."""
-    _run_git(["add", "-A"], cwd=worktree_path)
+    """Returns False if there's genuinely nothing to land on this branch
+    (no uncommitted changes AND no commits ahead of main — e.g. the agent
+    made no changes at all), True if it pushed something.
 
-    status = _run_git(["status", "--porcelain"], cwd=worktree_path)
-    if not status.strip():
+    Always re-checks "ahead of main" rather than only reacting to
+    uncommitted changes, so a retry after a failed push (commit already
+    happened, only the push failed) still pushes instead of silently
+    no-op'ing because there's nothing *new* to commit this time."""
+    _run_git(["add", "-A"], cwd=worktree_path, label="add")
+
+    status = _run_git(["status", "--porcelain"], cwd=worktree_path, label="status")
+    if status.strip():
+        _run_git(
+            [
+                "-c", f"user.name={BOT_NAME}",
+                "-c", f"user.email={BOT_EMAIL}",
+                "commit", "-m", commit_message,
+            ],
+            cwd=worktree_path,
+            label="commit",
+        )
+
+    ahead = _run_git(["rev-list", "--count", "HEAD", "^main"], cwd=worktree_path, label="rev-list")
+    if int(ahead.strip() or "0") == 0:
         return False
-
-    _run_git(
-        [
-            "-c", f"user.name={BOT_NAME}",
-            "-c", f"user.email={BOT_EMAIL}",
-            "commit", "-m", commit_message,
-        ],
-        cwd=worktree_path,
-    )
 
     basic_auth = base64.b64encode(f"x-access-token:{GITHUB_TOKEN}".encode()).decode()
     _run_git(
         [
             "-c", f"http.extraHeader=AUTHORIZATION: basic {basic_auth}",
-            "push", f"https://github.com/{GITHUB_REPO}.git",
+            "push", f"https://github.com/{_repo_slug()}.git",
             f"{branch_name}:{branch_name}",
         ],
         cwd=worktree_path,
+        label="push",
+        secret=basic_auth,
     )
     return True
 
@@ -59,7 +87,7 @@ def commit_and_push(worktree_path: str, branch_name: str, commit_message: str) -
 def create_pull_request(branch_name: str, title: str, body: str, base: str = "main") -> str:
     """Returns the new PR's URL."""
     resp = requests.post(
-        f"https://api.github.com/repos/{GITHUB_REPO}/pulls",
+        f"https://api.github.com/repos/{_repo_slug()}/pulls",
         headers={
             "Authorization": f"Bearer {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json",
