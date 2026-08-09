@@ -6,6 +6,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import ReactDiffViewer from "react-diff-viewer-continued";
 import { fetcher, approveTask, rejectTask } from "@/lib/api";
+import { UnifiedDiff } from "@/components/unifiedDiff";
 
 const STATUS = {
   pending: { label: "Queued", pill: "bg-[#545B68]/15 text-[#9AA1AC] border-[#545B68]/30" },
@@ -150,21 +151,16 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        {/* Edit mode: diff viewer */}
-        {task.mode === "edit" && task.diff && (
-          <div className="mt-6 overflow-hidden rounded-lg border border-[#232935]">
-            <h2 className="border-b border-[#232935] bg-[#12161F] px-4 py-2 font-mono text-xs uppercase tracking-widest text-[#7C8494]">
-              Diff
-            </h2>
-            <ReactDiffViewer
-              oldValue=""
-              newValue={task.diff}
-              splitView={false}
-              useDarkTheme={true}
-              hideLineNumbers={false}
-            />
-          </div>
-        )}
+       
+       {/* Edit mode: diff viewer */}
+{task.mode === "edit" && task.diff && (
+  <div className="mt-6 overflow-hidden rounded-lg border border-[#232935]">
+    <h2 className="border-b border-[#232935] bg-[#12161F] px-4 py-2 font-mono text-xs uppercase tracking-widest text-[#7C8494]">
+      Diff
+    </h2>
+    <UnifiedDiff diffText={task.diff} />
+  </div>
+)}
 
         {/* Suggest mode: proposal cards */}
         {task.mode === "suggest" && proposals.length > 0 && (

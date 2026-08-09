@@ -1,5 +1,6 @@
 import { IBM_Plex_Mono, Inter } from "next/font/google";
 import "./globals.css";
+import "diff2html/bundles/css/diff2html.min.css";
 
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],

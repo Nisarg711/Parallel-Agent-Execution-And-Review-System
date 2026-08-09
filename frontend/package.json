@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "diff2html": "^3.4.56",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-diff-viewer-continued": "^4.4.0",
