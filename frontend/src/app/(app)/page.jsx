@@ -19,6 +19,24 @@ function statusInfo(status) {
   return STATUS[status] || STATUS.pending;
 }
 
+const HOW_IT_WORKS = [
+  {
+    step: "1",
+    title: "Describe a task",
+    body: "Tell it what to do — add a check, fix a bug, write a component. Pick Edit or Suggest mode.",
+  },
+  {
+    step: "2",
+    title: "Runs in isolation",
+    body: "A fresh git worktree and branch — invisible to every other task running in parallel.",
+  },
+  {
+    step: "3",
+    title: "You review & merge",
+    body: "See the diff, the build check, and the agent's summary. Approve to open a real PR.",
+  },
+];
+
 // Phases mirror the agent's real ReAct loop (see backend/app/agent.py's
 // system prompts): explore the repo, decide, act, then optionally verify.
 // We don't have telemetry on which exact step it's on, so this cycles
@@ -270,6 +288,20 @@ export default function HomePage() {
           you review the diff.
         </p>
 
+        {/* How it works — real explanatory content, not filler, since a
+        first-time visitor should understand the model before touching it. */}
+        <div className="mb-12 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {HOW_IT_WORKS.map(({ step, title, body }) => (
+            <div key={step} className="rounded-lg border border-[#232935] bg-[#12161F] p-5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#E8A33D]/15 font-mono text-xs text-[#E8A33D]">
+                {step}
+              </div>
+              <p className="mt-3 text-sm font-medium text-[#E6E8EB]">{title}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#7C8494]">{body}</p>
+            </div>
+          ))}
+        </div>
+
         {/* KPI row — real counts, not decoration */}
         <div className="mb-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Branches" value={tasks?.length ?? "—"} />
@@ -405,6 +437,10 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        <footer className="mt-20 border-t border-[#181D27] pt-6 text-center text-xs text-[#4B5563]">
+          Built with Next.js, FastAPI, LangGraph &amp; Groq with ♥️.
+        </footer>
       </div>
     </main>
   );
