@@ -25,6 +25,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Without this, clicking "Workers" in the sidebar jumps to #workers
+instantly — with a short scroll distance that reads as if nothing happened. */
+html {
+  scroll-behavior: smooth;
+}
+
 /* Breathing border for a task card while its agent is actively running —
 used via `animate-[running-pulse_2s_ease-in-out_infinite]` so a "running"
 card visibly differs from a static one, not just by label color. */
