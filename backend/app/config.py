@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
+SETUP_COMMAND = os.environ.get("SETUP_COMMAND")  # e.g. "npm install" — run once, automatically, if the base repo has no dependencies yet
 REDIS_URL = os.environ.get("REDIS_URL")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
@@ -16,6 +17,8 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GITHUB_REPO = os.environ.get("GITHUB_REPO")  # "owner/repo" form
 
+TEST_COMMAND = os.environ.get("TEST_COMMAND")
+TEST_TIMEOUT_SECONDS = int(os.environ.get("TEST_TIMEOUT_SECONDS", "60"))
 # Where the target repo (Password Manager) is cloned once, and worktrees
 # for individual tasks get created underneath. Shared with any otxher
 # backend/frontend, so it lives at the project root, not inside backend/.

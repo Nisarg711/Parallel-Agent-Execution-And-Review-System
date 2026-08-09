@@ -5,12 +5,31 @@ task's agent."""
 import shutil
 from git import Repo
 from app.config import BASE_REPO_PATH, WORKTREES_DIR
+import subprocess
+
+
+
+
+def ensure_base_repo_dependencies():
+    """Runs SETUP_COMMAND once against the base repo clone, but only if its
+    dependency folder doesn't exist yet. Means a fresh clone of the target
+    repo works with zero manual setup — no one has to remember to run
+    `npm install` by hand. Every task's worktree then symlinks this single
+    shared install (see create_task_worktree) rather than reinstalling per
+    task, which is what actually keeps disk usage and per-task time down."""
+    from app.config import SETUP_COMMAND
+    node_modules = BASE_REPO_PATH / "node_modules"
+    if node_modules.exists() or not SETUP_COMMAND:
+        return
+    print(f"[setup] Installing base repo dependencies: {SETUP_COMMAND}")
+    result = subprocess.run(
+        SETUP_COMMAND, shell=True, cwd=BASE_REPO_PATH, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"[setup] WARNING: setup command failed:\n{result.stderr}")
 
 
 def create_task_worktree(task_id: str):
-    """Runs `git worktree add -b agent/<task_id>` against the base clone,
-    clearing out any leftover worktree/branch from a previous run of the
-    same task id first, so re-running a task id during development is safe."""
     branch = f"agent/{task_id}"
     worktree_path = WORKTREES_DIR / task_id
 
@@ -32,6 +51,13 @@ def create_task_worktree(task_id: str):
         base_repo.git.branch("-D", branch)
 
     base_repo.git.worktree("add", "-b", branch, str(worktree_path))
+
+    # node_modules is gitignored, so a fresh worktree never has it —
+    # symlink the base clone's install instead of reinstalling per task.
+    base_node_modules = BASE_REPO_PATH / "node_modules"
+    worktree_node_modules = worktree_path / "node_modules"
+    if base_node_modules.exists() and not worktree_node_modules.exists():
+        worktree_node_modules.symlink_to(base_node_modules, target_is_directory=True)
 
     return branch, worktree_path
 

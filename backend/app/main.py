@@ -20,6 +20,8 @@ from app.github_integration import commit_and_push, create_pull_request
 from app.git.worktree import remove_task_worktree
 
 from fastapi.middleware.cors import CORSMiddleware
+from app.git.worktree import ensure_base_repo_dependencies
+
 
 app = FastAPI(title="Multi-Agent Task Isolation and Review System")
 app.add_middleware(
@@ -32,6 +34,11 @@ app.add_middleware(
 def on_startup():
     init_db()
 
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+    ensure_base_repo_dependencies()
 
 '''
 Task is a SQLModel, FastAPI can use it directly as both the DB model and the API response schema
