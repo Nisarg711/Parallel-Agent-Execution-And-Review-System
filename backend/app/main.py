@@ -17,7 +17,7 @@ from app.db.session import engine, init_db
 from app.db.models import Task
 from app.task_runner import run_task
 from app.github_integration import commit_and_push, create_pull_request
-
+from app.git.worktree import remove_task_worktree
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -124,6 +124,13 @@ def approve_task(task_id: str):
         session.add(task)
         session.commit()
         session.refresh(task)
+
+             # Worktree's job is done once it's been committed/pushed (or if
+        # suggest mode, it was never written to anyway) — safe to clean up.
+        try:
+            remove_task_worktree(task_id)
+        except Exception:
+            pass # best-effort; a leftover folder is harmless, don't fail the request over it
         return task
 
 
@@ -137,4 +144,8 @@ def reject_task(task_id: str):
         session.add(task)
         session.commit()
         session.refresh(task)
+        try:
+            remove_task_worktree(task_id)
+        except Exception:
+            pass
         return task
