@@ -16,6 +16,12 @@ const STATUS = {
   rejected: { label: "Rejected", pill: "bg-[#E0605A]/15 text-[#E0605A] border-[#E0605A]/30" },
   failed: { label: "Failed", pill: "bg-[#E0605A]/15 text-[#E0605A] border-[#E0605A]/30" },
 };
+const TEST_STATUS_STYLES = {
+  passed: { label: "Build passed", pill: "border-[#4FB477]/30 bg-[#4FB477]/10 text-[#4FB477]" },
+  failed: { label: "Build failed", pill: "border-[#E8A33D]/30 bg-[#E8A33D]/10 text-[#E8A33D]" },
+  error: { label: "Build didn't run", pill: "border-[#E0605A]/30 bg-[#E0605A]/10 text-[#E0605A]" },
+  skipped: { label: "No build check configured", pill: "border-[#545B68]/30 bg-[#545B68]/10 text-[#9AA1AC]" },
+};
 
 function statusInfo(status) {
   return STATUS[status] || STATUS.pending;
@@ -159,6 +165,25 @@ export default function TaskDetailPage() {
       Diff
     </h2>
     <UnifiedDiff diffText={task.diff} />
+  </div>
+)}
+
+{/* Build check — informational only, never blocks approve/reject */}
+{task.mode === "edit" && task.test_status && (
+  <div className="mt-6 rounded-lg border border-[#232935] bg-[#12161F] p-4">
+    <div className="mb-2 flex items-center justify-between">
+      <h2 className="font-mono text-xs uppercase tracking-widest text-[#7C8494]">
+        Build check
+      </h2>
+      <span className={`rounded-full border px-2 py-0.5 font-mono text-xs ${TEST_STATUS_STYLES[task.test_status]?.pill}`}>
+        {TEST_STATUS_STYLES[task.test_status]?.label || task.test_status}
+      </span>
+    </div>
+    {task.test_output && (
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-[#0B0E14] p-3 font-mono text-xs text-[#9AA1AC]">
+        {task.test_output}
+      </pre>
+    )}
   </div>
 )}
 

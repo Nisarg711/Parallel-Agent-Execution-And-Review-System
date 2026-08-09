@@ -26,3 +26,5 @@ class Task(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     summary: Optional[str] = None
     pr_url: Optional[str] = None  # set once an edit-mode approval opens a PR
+    test_status: Optional[str] = None  # "skipped" | "passed" | "failed" | "error"
+    test_output: Optional[str] = None

@@ -10,7 +10,7 @@ from app.db.session import engine
 from app.db.models import Task
 from app.git.worktree import create_task_worktree, get_worktree_diff
 from app.agent import run_agent
-
+from app.test_runner import run_tests
 
 def _proposals_to_json(proposals):
     """Serialize proposals list to a JSON string for storage.
@@ -56,6 +56,16 @@ def run_task(task_id: str, description: str, mode: str):
 
             if mode == "edit":
                 task.diff = get_worktree_diff(worktree_path)
+                if task.diff:
+                    # Tests run against whatever's on disk right now — no
+                    # commit needed. Committing only ever happens at
+                    # approval time (see github_integration.commit_and_push),
+                    # with the bot identity, so attribution stays correct
+                    # and this never depends on git config being set up
+                    # wherever the worker happens to run.
+                    test_status, test_output = run_tests(str(worktree_path))
+                    task.test_status = test_status
+                    task.test_output = test_output
             else:
                 task.proposals = _proposals_to_json(proposals)
 

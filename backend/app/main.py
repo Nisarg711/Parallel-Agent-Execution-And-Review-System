@@ -30,9 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-@app.on_event("startup")
-def on_startup():
-    init_db()
 
 
 @app.on_event("startup")
