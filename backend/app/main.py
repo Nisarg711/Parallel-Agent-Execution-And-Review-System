@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.git.worktree import ensure_base_repo_dependencies
 from app.git.worktree import clone_repo, run_setup_command
 from app.github_integration import parse_github_url, check_repo_write_access
+from pathlib import Path
 import traceback
 
 app = FastAPI(title="Multi-Agent Task Isolation and Review System")
@@ -159,18 +160,25 @@ def approve_task(task_id: str):
         if task.status != "needs_review":
             raise HTTPException(status_code=400, detail=f"Task is '{task.status}', not ready for approval")
 
-        if task.mode == "edit" and task.worktree_path and task.branch_name:
+        # Repo-aware: which repo a task's push/PR/cleanup target depends on
+        # this row, not a single global env var — multiple repos can have
+        # tasks in flight at once.
+        repository = session.get(Repository, task.repo_id) if task.repo_id else None
+
+        if task.mode == "edit" and task.worktree_path and task.branch_name and repository:
             try:
                 pushed = commit_and_push(
                     task.worktree_path,
                     task.branch_name,
                     commit_message=f"Agent: {task.description[:72]}",
+                    repo_slug=f"{repository.owner}/{repository.name}",
                 )
                 if pushed:
                     task.pr_url = create_pull_request(
                         task.branch_name,
                         title=task.description[:72],
                         body=task.summary or "Agent-generated change.",
+                        repo_slug=f"{repository.owner}/{repository.name}",
                     )
             except Exception as err:
                 raise HTTPException(
@@ -183,12 +191,13 @@ def approve_task(task_id: str):
         session.commit()
         session.refresh(task)
 
-             # Worktree's job is done once it's been committed/pushed (or if
+        # Worktree's job is done once it's been committed/pushed (or if
         # suggest mode, it was never written to anyway) — safe to clean up.
         try:
-            remove_task_worktree(task_id)
+            if repository and repository.local_path:
+                remove_task_worktree(task_id, repository.id, Path(repository.local_path))
         except Exception:
-            pass # best-effort; a leftover folder is harmless, don't fail the request over it
+            pass  # best-effort; a leftover folder is harmless, don't fail the request over it
         return task
 
 
@@ -198,12 +207,14 @@ def reject_task(task_id: str):
         task = session.get(Task, task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found")
+        repository = session.get(Repository, task.repo_id) if task.repo_id else None
         task.status = "rejected"
         session.add(task)
         session.commit()
         session.refresh(task)
         try:
-            remove_task_worktree(task_id)
+            if repository and repository.local_path:
+                remove_task_worktree(task_id, repository.id, Path(repository.local_path))
         except Exception:
             pass
         return task

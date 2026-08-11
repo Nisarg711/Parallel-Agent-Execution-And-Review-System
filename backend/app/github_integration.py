@@ -33,7 +33,7 @@ def _run_git(args, cwd, label, secret=None):
     return result.stdout
 
 
-def commit_and_push(worktree_path: str, branch_name: str, commit_message: str) -> bool:
+def commit_and_push(worktree_path: str, branch_name: str, commit_message: str, repo_slug: str) -> bool:
     """Returns False if there's genuinely nothing to land on this branch
     (no uncommitted changes AND no commits ahead of main — e.g. the agent
     made no changes at all), True if it pushed something.
@@ -64,7 +64,7 @@ def commit_and_push(worktree_path: str, branch_name: str, commit_message: str) -
     _run_git(
         [
             "-c", f"http.extraHeader=AUTHORIZATION: basic {basic_auth}",
-            "push", f"https://github.com/{_repo_slug()}.git",
+            "push", f"https://github.com/{repo_slug}.git",
             f"{branch_name}:{branch_name}",
         ],
         cwd=worktree_path,
@@ -74,10 +74,10 @@ def commit_and_push(worktree_path: str, branch_name: str, commit_message: str) -
     return True
 
 
-def create_pull_request(branch_name: str, title: str, body: str, base: str = "main") -> str:
+def create_pull_request(branch_name: str, title: str, body: str, repo_slug: str, base: str = "main") -> str:
     """Returns the new PR's URL."""
     resp = requests.post(
-        f"https://api.github.com/repos/{_repo_slug()}/pulls",
+        f"https://api.github.com/repos/{repo_slug}/pulls",
         headers={
             "Authorization": f"Bearer {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json",
