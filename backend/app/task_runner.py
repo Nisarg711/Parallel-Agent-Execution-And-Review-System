@@ -37,7 +37,13 @@ def run_task(task_id: str, description: str, mode: str):
         repository = session.get(Repository, task.repo_id)
         if repository is None or repository.status != "ready":
             raise ValueError(f"Repo {task.repo_id} is not ready")
+        # Capture plain values before the session closes below — SQLAlchemy
+        # expires an object's attributes on commit, and once the session
+        # itself exits there's nothing left to refresh them from, so
+        # `repository.whatever` raises DetachedInstanceError afterward.
+        repo_id = repository.id
         base_path = Path(repository.local_path)
+        test_command = repository.test_command
 
         task.status = "running"
         task.updated_at = datetime.utcnow()
@@ -45,7 +51,7 @@ def run_task(task_id: str, description: str, mode: str):
         session.commit()
 
     try:
-        branch, worktree_path = create_task_worktree(task_id, repository.id, base_path)
+        branch, worktree_path = create_task_worktree(task_id, repo_id, base_path)
 
         with Session(engine) as session:
             task = session.get(Task, task_id)
@@ -70,7 +76,7 @@ def run_task(task_id: str, description: str, mode: str):
                     # with the bot identity, so attribution stays correct
                     # and this never depends on git config being set up
                     # wherever the worker happens to run.
-                    test_status, test_output = run_tests(str(worktree_path),repository.test_command)
+                    test_status, test_output = run_tests(str(worktree_path), test_command)
                     task.test_status = test_status
                     task.test_output = test_output
             else:
