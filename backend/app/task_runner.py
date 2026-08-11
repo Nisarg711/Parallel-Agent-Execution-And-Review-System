@@ -30,7 +30,13 @@ def run_task(task_id: str, description: str, mode: str):
     with Session(engine) as session:
         task = session.get(Task, task_id)
         if task is None:
-            raise ValueError(f"Task {task_id} not found in DB — must be inserted before run_task() is called")
+            raise ValueError(f"Task {task_id} not found in DB")
+        if task.repo_id is None:
+            raise ValueError(f"Task {task_id} has no repo_id set")
+        repository = session.get(Repository, task.repo_id)
+        if repository is None or repository.status != "ready":
+            raise ValueError(f"Repo {task.repo_id} is not ready")
+        base_path = Path(repository.local_path)
 
         task.status = "running"
         task.updated_at = datetime.utcnow()
@@ -38,7 +44,7 @@ def run_task(task_id: str, description: str, mode: str):
         session.commit()
 
     try:
-        branch, worktree_path = create_task_worktree(task_id)
+        branch, worktree_path = create_task_worktree(task_id, repository.id, base_path)
 
         with Session(engine) as session:
             task = session.get(Task, task_id)
@@ -63,7 +69,7 @@ def run_task(task_id: str, description: str, mode: str):
                     # with the bot identity, so attribution stays correct
                     # and this never depends on git config being set up
                     # wherever the worker happens to run.
-                    test_status, test_output = run_tests(str(worktree_path))
+                    test_status, test_output = run_tests(str(worktree_path),repository.test_command)
                     task.test_status = test_status
                     task.test_output = test_output
             else:

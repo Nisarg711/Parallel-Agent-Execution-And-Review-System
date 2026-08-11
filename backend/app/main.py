@@ -14,14 +14,15 @@ from sqlmodel import Session, select
 from rq import Worker
 from app.queue import task_queue, redis_conn
 from app.db.session import engine, init_db
-from app.db.models import Task
+from app.db.models import Task,Repository
 from app.task_runner import run_task
 from app.github_integration import commit_and_push, create_pull_request
 from app.git.worktree import remove_task_worktree
-
 from fastapi.middleware.cors import CORSMiddleware
 from app.git.worktree import ensure_base_repo_dependencies
-
+from app.git.worktree import clone_repo, run_setup_command
+from app.github_integration import parse_github_url, check_repo_write_access
+import traceback
 
 app = FastAPI(title="Multi-Agent Task Isolation and Review System")
 app.add_middleware(
@@ -35,17 +36,70 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
-    ensure_base_repo_dependencies()
 
+
+@app.post("/repos", response_model=Repository)
+def register_repo(github_url: str, test_command: str = None, setup_command: str = None):
+    try:
+        owner, name = parse_github_url(github_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not check_repo_write_access(owner, name):
+        raise HTTPException(
+            status_code=403,
+            detail="This app's GitHub token doesn't have write access to that repo. "
+                   "Add it as a collaborator, or use a repo you already own.",
+        )
+
+    repository = Repository(
+        github_url=github_url, owner=owner, name=name,
+        test_command=test_command, setup_command=setup_command,
+    )
+    with Session(engine) as session:
+        session.add(repository)
+        session.commit()
+        session.refresh(repository)
+
+    try:
+        base_path = clone_repo(repository.id, github_url)
+        run_setup_command(base_path, setup_command)
+        with Session(engine) as session:
+            repository = session.get(Repository, repository.id)
+            repository.local_path = str(base_path)
+            repository.status = "ready"
+            session.add(repository)
+            session.commit()
+            session.refresh(repository)
+    except Exception:
+        with Session(engine) as session:
+            repository = session.get(Repository, repository.id)
+            repository.status = "failed"
+            repository.error_log = traceback.format_exc()
+            session.add(repository)
+            session.commit()
+            session.refresh(repository)
+
+    return repository
+
+@app.get("/repos", response_model=list[Repository])
+def list_repos():
+    with Session(engine) as session:
+        return session.exec(select(Repository).order_by(Repository.created_at.desc())).all()
+
+    
 '''
 Task is a SQLModel, FastAPI can use it directly as both the DB model and the API response schema
 '''
 @app.post("/tasks", response_model=Task)
-def create_task(description: str, mode: str):
+def create_task(description: str, mode: str, repo_id: str, background_tasks: BackgroundTasks):
     if mode not in ("edit", "suggest"):
         raise HTTPException(status_code=400, detail='mode must be "edit" or "suggest"')
-
-    task = Task(description=description, mode=mode)
+    with Session(engine) as session:
+        repository = session.get(Repository, repo_id)
+    if repository is None or repository.status != "ready":
+        raise HTTPException(status_code=400, detail="Repo not found or not ready")
+    task = Task(description=description, mode=mode, repo_id=repo_id)
     with Session(engine) as session:
         session.add(task)
         session.commit()

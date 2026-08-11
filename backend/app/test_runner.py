@@ -9,21 +9,13 @@ import subprocess
 from app.config import TEST_COMMAND, TEST_TIMEOUT_SECONDS
 
 
-def run_tests(worktree_path: str):
-    """Returns (status, output). status is one of:
-    "skipped" (no TEST_COMMAND configured), "passed", "failed", or "error"
-    (command itself couldn't run, e.g. missing deps or timeout)."""
-    if not TEST_COMMAND:
-        return "skipped", "No TEST_COMMAND configured — tests were not run."
-
+def run_tests(worktree_path: str, test_command: str | None):
+    if not test_command:
+        return "skipped", "No test command configured for this repo."
     try:
         result = subprocess.run(
-            TEST_COMMAND,
-            shell=True,
-            cwd=worktree_path,
-            capture_output=True,
-            text=True,
-            timeout=TEST_TIMEOUT_SECONDS,
+            test_command, shell=True, cwd=worktree_path,
+            capture_output=True, text=True, timeout=TEST_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
         return "error", f"Test command timed out after {TEST_TIMEOUT_SECONDS}s."
@@ -32,4 +24,4 @@ def run_tests(worktree_path: str):
 
     output = (result.stdout or "") + (result.stderr or "")
     status = "passed" if result.returncode == 0 else "failed"
-    return status, output[-5000:]  # cap stored length
+    return status, output[-5000:]

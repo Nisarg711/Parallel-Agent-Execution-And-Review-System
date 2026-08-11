@@ -98,3 +98,26 @@ def create_pull_request(branch_name: str, title: str, body: str, base: str = "ma
     )
     resp.raise_for_status()
     return resp.json()["html_url"]
+
+
+import re
+
+def parse_github_url(url: str):
+    """Extracts (owner, name) from a github.com URL, with or without .git."""
+    match = re.match(r"^https://github\.com/([^/]+)/([^/]+?)(\.git)?/?$", url.strip())
+    if not match:
+        raise ValueError(f"'{url}' doesn't look like a GitHub repo URL")
+    return match.group(1), match.group(2)
+
+
+def check_repo_write_access(owner: str, name: str) -> bool:
+    """True only if GITHUB_TOKEN itself has push access — not the visitor,
+    since visitors never authenticate in this design (see conversation)."""
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{name}",
+        headers={"Authorization": f"Bearer {GITHUB_TOKEN}"},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        return False
+    return resp.json().get("permissions", {}).get("push", False)

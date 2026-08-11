@@ -4,11 +4,35 @@ underlying .git object store but never sharing working files with another
 task's agent."""
 import shutil
 from git import Repo
-from app.config import BASE_REPO_PATH, WORKTREES_DIR
+from app.config import PROJECT_ROOT
 import subprocess
+BASES_DIR = PROJECT_ROOT / "workspaces" / "bases"
+WORKTREES_ROOT = PROJECT_ROOT / "workspaces" / "worktrees"
+from pathlib import Path
 
 
 
+def clone_repo(repo_id: str, clone_url: str) -> Path:
+    base_path = BASES_DIR / repo_id
+    if base_path.exists():
+        return base_path
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", clone_url, str(base_path)], check=True)
+    return base_path
+
+def run_setup_command(base_path: Path, setup_command: str | None):
+    """One-time dependency install for a repo, e.g. npm install. Skips if
+    already done — mirrors the earlier single-repo version, just per-repo now."""
+    if not setup_command:
+        return
+    node_modules = base_path / "node_modules"
+    if node_modules.exists():
+        return
+    result = subprocess.run(
+        setup_command, shell=True, cwd=base_path, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Setup command failed:\n{result.stderr}")
 
 def ensure_base_repo_dependencies():
     """Runs SETUP_COMMAND once against the base repo clone, but only if its
@@ -18,29 +42,23 @@ def ensure_base_repo_dependencies():
     shared install (see create_task_worktree) rather than reinstalling per
     task, which is what actually keeps disk usage and per-task time down."""
     from app.config import SETUP_COMMAND
-    node_modules = BASE_REPO_PATH / "node_modules"
+    node_modules = BASES_DIR / "node_modules"
     if node_modules.exists() or not SETUP_COMMAND:
         return
     print(f"[setup] Installing base repo dependencies: {SETUP_COMMAND}")
     result = subprocess.run(
-        SETUP_COMMAND, shell=True, cwd=BASE_REPO_PATH, capture_output=True, text=True
+        SETUP_COMMAND, shell=True, cwd=BASES_DIR, capture_output=True, text=True
     )
     if result.returncode != 0:
         print(f"[setup] WARNING: setup command failed:\n{result.stderr}")
 
 
-def create_task_worktree(task_id: str):
+def create_task_worktree(task_id: str, repo_id: str, base_path: Path):
     branch = f"agent/{task_id}"
-    worktree_path = WORKTREES_DIR / task_id
+    worktree_path = WORKTREES_ROOT / repo_id / task_id
 
-    if not BASE_REPO_PATH.exists():
-        raise FileNotFoundError(
-            f"Base repo not found at {BASE_REPO_PATH}. Clone the target repo there "
-            "first (see TARGET_REPO_PATH in .env)."
-        )
-
-    WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
-    base_repo = Repo(BASE_REPO_PATH)
+    WORKTREES_ROOT.joinpath(repo_id).mkdir(parents=True, exist_ok=True)
+    base_repo = Repo(base_path)
 
     if worktree_path.exists():
         base_repo.git.worktree("remove", "--force", str(worktree_path))
@@ -50,11 +68,15 @@ def create_task_worktree(task_id: str):
     if branch in local_branches:
         base_repo.git.branch("-D", branch)
 
+    # This is a cleanup step for local git branches, separate from the 
+    # worktree-folder cleanup right above it. It's asking: "does a local '
+    # 'branch named agent/<task-id> already exist in the base repo's git
+    # history, from a previous run of this same task id?" If so, delete 
+    # it (-D force-deletes, since it might not be fully merged).
+
     base_repo.git.worktree("add", "-b", branch, str(worktree_path))
 
-    # node_modules is gitignored, so a fresh worktree never has it —
-    # symlink the base clone's install instead of reinstalling per task.
-    base_node_modules = BASE_REPO_PATH / "node_modules"
+    base_node_modules = base_path / "node_modules"
     worktree_node_modules = worktree_path / "node_modules"
     if base_node_modules.exists() and not worktree_node_modules.exists():
         worktree_node_modules.symlink_to(base_node_modules, target_is_directory=True)
@@ -62,11 +84,9 @@ def create_task_worktree(task_id: str):
     return branch, worktree_path
 
 
-def remove_task_worktree(task_id: str):
-    """Tears down the worktree folder and its git registration. Call this
-    once a task's branch has been reviewed/merged/pushed."""
-    worktree_path = WORKTREES_DIR / task_id
-    base_repo = Repo(BASE_REPO_PATH)
+def remove_task_worktree(task_id: str, repo_id: str, base_path: Path):
+    worktree_path = WORKTREES_ROOT / repo_id / task_id
+    base_repo = Repo(base_path)
     try:
         base_repo.git.worktree("remove", "--force", str(worktree_path))
     except Exception:
@@ -83,3 +103,4 @@ def get_worktree_diff(worktree_path) -> str:
     repo = Repo(worktree_path)
 
     return repo.git.diff()
+

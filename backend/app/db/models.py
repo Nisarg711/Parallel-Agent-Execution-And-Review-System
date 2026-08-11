@@ -28,3 +28,17 @@ class Task(SQLModel, table=True):
     pr_url: Optional[str] = None  # set once an edit-mode approval opens a PR
     test_status: Optional[str] = None  # "skipped" | "passed" | "failed" | "error"
     test_output: Optional[str] = None
+    repo_id: Optional[str] = Field(default=None, foreign_key="repository.id")
+
+
+class Repository(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    github_url: str
+    owner: str
+    name: str
+    local_path: Optional[str] = None
+    test_command: Optional[str] = None
+    setup_command: Optional[str] = None
+    status: str = "cloning"   # "cloning" | "ready" | "failed"
+    error_log: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
