@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetcher, createTask } from "@/lib/api";
 import { BranchIcon } from "@/components/BrandMark";
-
+import { fetcher, createTask, listRepos, registerRepo } from "@/lib/api";
 const STATUS = {
   pending: { label: "Queued", hex: "#545B68", pill: "bg-[#545B68]/15 text-[#9AA1AC] border-[#545B68]/30" },
   running: { label: "Running", hex: "#3FA9C9", pill: "bg-[#3FA9C9]/15 text-[#3FA9C9] border-[#3FA9C9]/30" },
@@ -233,25 +232,52 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!description.trim()) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await createTask(description, mode);
-      setDescription("");
-    } catch (err) {
-      setSubmitError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
+ async function handleSubmit(e) {
+  e.preventDefault();
+  if (!description.trim() || !repoId) return;
+
+  setSubmitting(true);
+  setSubmitError(null);
+  try {
+    await createTask(description, mode, repoId);
+    setDescription("");
+  } catch (err) {
+    setSubmitError(err.message);
+  } finally {
+    setSubmitting(false);
   }
+}
+
 
   const runningCount = tasks?.filter((t) => t.status === "running").length ?? 0;
   const needsReviewCount = tasks?.filter((t) => t.status === "needs_review").length ?? 0;
   const workersOnline = queueStatus?.workers?.length ?? 0;
+  const { data: repos } = useSWR("/repos", fetcher, { refreshInterval: 5000 });
 
+const [repoId, setRepoId] = useState("");
+const [showAddRepo, setShowAddRepo] = useState(false);
+const [newRepoUrl, setNewRepoUrl] = useState("");
+const [addingRepo, setAddingRepo] = useState(false);
+const [addRepoError, setAddRepoError] = useState(null);
+
+const readyRepos = repos?.filter((r) => r.status === "ready") ?? [];
+
+async function handleAddRepo(e) {
+  e.preventDefault();
+  if (!newRepoUrl.trim()) return;
+  setAddingRepo(true);
+  setAddRepoError(null);
+  try {
+    const repo = await registerRepo(newRepoUrl.trim());
+    setRepoId(repo.id);
+    setShowAddRepo(false);
+    setNewRepoUrl("");
+  } catch (err) {
+    setAddRepoError(err.message);
+  } finally {
+    setAddingRepo(false);
+  }
+}
   return (
     <main className="relative min-h-screen bg-[#0B0E14]">
       {/* Subtle depth: a soft radial glow behind the header so the dark
@@ -315,6 +341,58 @@ export default function HomePage() {
           onSubmit={handleSubmit}
           className="mb-16 rounded-xl border border-[#232935] bg-[#12161F] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.35)] transition focus-within:border-[#E8A33D]/40"
         >
+          <div className="mb-4">
+  <div className="mb-2 flex items-center justify-between">
+    <label className="font-mono text-xs uppercase tracking-widest text-[#7C8494]">
+      Repository
+    </label>
+    <button
+      type="button"
+      onClick={() => setShowAddRepo((v) => !v)}
+      className="font-mono text-xs text-[#E8A33D] hover:underline"
+    >
+      {showAddRepo ? "Cancel" : "+ Add repo"}
+    </button>
+  </div>
+
+  {!showAddRepo && (
+    <select
+      value={repoId}
+      onChange={(e) => setRepoId(e.target.value)}
+      className="w-full rounded-md border border-[#232935] bg-[#0B0E14] p-2.5 font-mono text-sm text-[#E6E8EB] focus:outline-none focus:ring-1 focus:ring-[#E8A33D]/60"
+    >
+      <option value="">
+        {readyRepos.length === 0 ? "No repos yet — add one" : "Select a repo…"}
+      </option>
+      {readyRepos.map((repo) => (
+        <option key={repo.id} value={repo.id}>
+          {repo.owner}/{repo.name}
+        </option>
+      ))}
+    </select>
+  )}
+
+  {showAddRepo && (
+    <div className="space-y-2">
+      <input
+        type="text"
+        placeholder="https://github.com/owner/repo"
+        value={newRepoUrl}
+        onChange={(e) => setNewRepoUrl(e.target.value)}
+        className="w-full rounded-md border border-[#232935] bg-[#0B0E14] p-2.5 font-mono text-sm text-[#E6E8EB] placeholder:text-[#4B5563] focus:outline-none focus:ring-1 focus:ring-[#E8A33D]/60"
+      />
+      <button
+        type="button"
+        onClick={handleAddRepo}
+        disabled={addingRepo || !newRepoUrl.trim()}
+        className="rounded-md bg-[#232935] px-3 py-1.5 text-sm text-[#E6E8EB] transition hover:bg-[#2E3543] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {addingRepo ? "Cloning…" : "Register repo"}
+      </button>
+      {addRepoError && <p className="text-sm text-[#E0605A]">{addRepoError}</p>}
+    </div>
+  )}
+</div>
           <textarea
             className="w-full resize-none rounded-md border border-[#232935] bg-[#0B0E14] p-4 font-mono text-base text-[#E6E8EB] placeholder:text-[#4B5563] focus:outline-none focus:ring-1 focus:ring-[#E8A33D]/60"
             rows={3}

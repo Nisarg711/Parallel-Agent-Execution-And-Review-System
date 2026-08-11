@@ -7,10 +7,11 @@ import traceback
 from datetime import datetime
 from sqlmodel import Session
 from app.db.session import engine
-from app.db.models import Task
+from app.db.models import Task,Repository
 from app.git.worktree import create_task_worktree, get_worktree_diff
 from app.agent import run_agent
 from app.test_runner import run_tests
+from pathlib import Path
 
 def _proposals_to_json(proposals):
     """Serialize proposals list to a JSON string for storage.

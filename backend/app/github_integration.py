@@ -11,20 +11,10 @@ up in `git remote -v`. Error messages use a fixed `label`, never the raw
 import base64
 import subprocess
 import requests
-from app.config import GITHUB_TOKEN, GITHUB_REPO
+from app.config import GITHUB_TOKEN
 
 BOT_NAME = "Agent Bot"
 BOT_EMAIL = "agent-bot@users.noreply.github.com"
-
-
-def _repo_slug() -> str:
-    """Normalizes GITHUB_REPO to "owner/repo" regardless of whether it was
-    set as that, a full URL, or either with a trailing slash/`.git`."""
-    slug = (GITHUB_REPO or "").strip()
-    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
-        if slug.startswith(prefix):
-            slug = slug[len(prefix):]
-    return slug.removesuffix(".git").strip("/")
 
 
 def _run_git(args, cwd, label, secret=None):
