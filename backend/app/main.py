@@ -24,11 +24,13 @@ from app.git.worktree import clone_repo, run_setup_command
 from app.github_integration import parse_github_url, check_repo_write_access
 from pathlib import Path
 import traceback
+import os
 
 app = FastAPI(title="Multi-Agent Task Isolation and Review System")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
